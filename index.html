@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="QuizSnap">
+  <title>QuizSnap</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a0a1a;
+      --card: #151528;
+      --accent: #8b5cf6;
+      --accent2: #6366f1;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --text: #e8e8f0;
+      --dim: #6b7280;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .header {
+      padding: 55px 20px 18px;
+      text-align: center;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 0 0 24px 24px;
+    }
+    .header h1 { font-size: 26px; font-weight: 700; }
+    .header p { font-size: 13px; opacity: 0.8; margin-top: 2px; }
+    .content { padding: 16px; max-width: 500px; margin: 0 auto; }
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 14px;
+    }
+    
+    /* Upload Area */
+    .upload-area {
+      border: 2px dashed rgba(139,92,246,0.4);
+      border-radius: 16px;
+      padding: 30px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .upload-area:active { border-color: var(--accent); background: rgba(139,92,246,0.05); }
+    .upload-icon { font-size: 48px; margin-bottom: 10px; }
+    .upload-text { font-size: 16px; font-weight: 600; }
+    .upload-hint { font-size: 13px; color: var(--dim); margin-top: 6px; }
+    input[type="file"] { display: none; }
+    
+    /* Preview */
+    .preview { display: none; margin-bottom: 14px; }
+    .preview img {
+      width: 100%;
+      border-radius: 12px;
+      max-height: 250px;
+      object-fit: cover;
+    }
+    
+    /* Loading */
+    .loading { display: none; text-align: center; padding: 40px 20px; }
+    .spinner {
+      width: 48px; height: 48px;
+      border: 4px solid rgba(139,92,246,0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 15px; color: var(--dim); }
+    .loading-progress { 
+      font-size: 24px; font-weight: 700; color: var(--accent);
+      margin-top: 8px;
+    }
+    
+    /* Extracted Text */
+    .extracted { display: none; }
+    .extracted-text {
+      background: rgba(255,255,255,0.04);
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--dim);
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 14px;
+    }
+    
+    /* Quiz Section */
+    .quiz-section { display: none; }
+    .quiz-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .quiz-counter { font-size: 14px; color: var(--dim); }
+    .quiz-score { 
+      font-size: 14px; font-weight: 700;
+      padding: 4px 12px;
+      background: rgba(139,92,246,0.15);
+      color: var(--accent);
+      border-radius: 20px;
+    }
+    
+    .question-card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 12px;
+      transition: all 0.3s;
+    }
+    .question-type {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .question-text {
+      font-size: 17px;
+      font-weight: 600;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+    .question-text .blank {
+      display: inline-block;
+      min-width: 100px;
+      border-bottom: 2px dashed var(--accent);
+      padding: 0 4px;
+      color: var(--accent);
+    }
+    
+    /* Answer Options */
+    .options { display: flex; flex-direction: column; gap: 8px; }
+    .option-btn {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      font-size: 15px;
+      text-align: left;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .option-btn:active { transform: scale(0.98); }
+    .option-btn.correct {
+      border-color: var(--green);
+      background: rgba(34,197,94,0.12);
+      color: var(--green);
+    }
+    .option-btn.wrong {
+      border-color: var(--red);
+      background: rgba(239,68,68,0.12);
+      color: var(--red);
+    }
+    .option-btn.highlight {
+      border-color: var(--green);
+      background: rgba(34,197,94,0.08);
+    }
+    .option-btn:disabled { cursor: default; }
+    
+    /* Text Input Answer */
+    .answer-input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      font-size: 15px;
+      border-radius: 12px;
+      outline: none;
+      margin-bottom: 8px;
+    }
+    .answer-input:focus { border-color: var(--accent); }
+    
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: white;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      margin-top: 8px;
+    }
+    .btn-check {
+      background: var(--accent);
+      color: white;
+    }
+    
+    /* Results */
+    .results { display: none; text-align: center; padding: 20px; }
+    .results-emoji { font-size: 64px; margin-bottom: 12px; }
+    .results-score { font-size: 36px; font-weight: 700; color: var(--accent); }
+    .results-label { font-size: 16px; color: var(--dim); margin: 8px 0 20px; }
+    .results-bar {
+      height: 8px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .results-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 1s ease;
+    }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 3px;
+      margin-bottom: 16px;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      background: transparent;
+      color: var(--dim);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .tab.active { background: var(--accent); color: white; }
+    
+    /* Topic chips */
+    .topics-section { margin-bottom: 14px; }
+    .topics-label { font-size: 13px; color: var(--dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .topics-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .topic-chip {
+      padding: 8px 14px;
+      border: 2px solid rgba(139,92,246,0.3);
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .topic-chip.selected {
+      border-color: var(--accent);
+      background: rgba(139,92,246,0.2);
+      color: var(--accent);
+    }
+    .topic-chip .topic-count {
+      font-size: 11px;
+      color: var(--dim);
+      margin-left: 4px;
+    }
+    .topic-select-all {
+      font-size: 12px;
+      color: var(--accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 0;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>📸 QuizSnap</h1>
+    <p>Stoff fotografieren → Quiz lösen</p>
+  </div>
+
+  <div class="content">
+    <!-- STEP 1: Upload -->
+    <div id="step-upload">
+      <div class="card upload-area" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">📷</div>
+        <div class="upload-text">Foto aufnehmen oder Bild wählen</div>
+        <div class="upload-hint">Schulbuch, Heft, Arbeitsblatt, ...</div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" capture="environment" onchange="handleImage(event)">
+      
+      <div class="preview card" id="preview">
+        <img id="previewImg">
+      </div>
+    </div>
+
+    <!-- STEP 2: Loading -->
+    <div class="loading card" id="step-loading">
+      <div class="spinner"></div>
+      <div class="loading-text">Text wird erkannt...</div>
+      <div class="loading-progress" id="ocrProgress">0%</div>
+    </div>
+
+    <!-- STEP 3: Extracted Text + Quiz Type -->
+    <div class="extracted" id="step-extracted">
+      <div class="card">
+        <div class="question-type">📝 Erkannter Text</div>
+        <div class="extracted-text" id="extractedText"></div>
+        <div class="topics-section" id="topicsSection" style="display:none">
+          <div class="topics-label">📂 Themen auswählen</div>
+          <div class="topics-grid" id="topicsGrid"></div>
+          <button class="topic-select-all" onclick="toggleAllTopics()">✅ Alle auswählen / abwählen</button>
+        </div>
+        <div class="tabs" id="quizTypeTabs">
+          <button class="tab active" data-type="mixed" onclick="selectQuizType(this)">🎲 Mix</button>
+          <button class="tab" data-type="mc" onclick="selectQuizType(this)">📋 Multiple Choice</button>
+          <button class="tab" data-type="fill" onclick="selectQuizType(this)">✏️ Lückentext</button>
+        </div>
+        <button class="btn btn-primary" onclick="generateQuiz()">🧠 Quiz generieren</button>
+        <button class="btn btn-secondary" onclick="resetAll()">📷 Neues Foto</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: Quiz -->
+    <div class="quiz-section" id="step-quiz">
+      <div class="quiz-header">
+        <div class="quiz-counter" id="quizCounter">Frage 1/5</div>
+        <div class="quiz-score" id="quizScore">0 Punkte</div>
+      </div>
+      <div id="quizContainer"></div>
+      <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()" style="display:none">Nächste Frage →</button>
+    </div>
+
+    <!-- STEP 5: Results -->
+    <div class="results card" id="step-results">
+      <div class="results-emoji" id="resultsEmoji">🎉</div>
+      <div class="results-score" id="resultsScore">4/5</div>
+      <div class="results-label">richtige Antworten</div>
+      <div class="results-bar"><div class="results-fill" id="resultsFill"></div></div>
+      <button class="btn btn-primary" onclick="generateQuiz()">🔄 Nochmal mit gleichem Text</button>
+      <button class="btn btn-secondary" onclick="resetAll()">📷 Neues Foto</button>
+    </div>
+  </div>
+
+  <script>
+    let extractedText = '';
+    let quizType = 'mixed';
+    let questions = [];
+    let currentQ = 0;
+    let score = 0;
+    let answered = false;
+    let detectedTopics = []; // { name, sentences: [...] }
+    let selectedTopics = new Set();
+    
+    // ========== IMAGE HANDLING ==========
+    async function handleImage(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      // Show preview
+      const url = URL.createObjectURL(file);
+      document.getElementById('previewImg').src = url;
+      document.getElementById('preview').style.display = 'block';
+      
+      // Show loading
+      show('step-loading');
+      hide('step-upload');
+      
+      try {
+        const result = await Tesseract.recognize(file, 'deu+eng', {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              document.getElementById('ocrProgress').textContent = 
+                Math.round(m.progress * 100) + '%';
+            }
+          }
+        });
+        
+        extractedText = result.data.text.trim();
+        
+        if (extractedText.length < 20) {
+          alert('Zu wenig Text erkannt. Bitte ein deutlicheres Foto machen!');
+          resetAll();
+          return;
+        }
+        
+        document.getElementById('extractedText').textContent = extractedText;
+        detectTopics(extractedText);
+        hide('step-loading');
+        show('step-extracted');
+        
+      } catch(err) {
+        alert('Fehler bei der Texterkennung: ' + err.message);
+        resetAll();
+      }
+    }
+    
+    // ========== TOPIC DETECTION ==========
+    function detectTopics(text) {
+      detectedTopics = [];
+      selectedTopics = new Set();
+      
+      // Split into paragraphs/sections
+      const paragraphs = text.split(/\n{2,}/).filter(p => p.trim().length > 20);
+      
+      // Strategy 1: Look for headings (short lines followed by longer text)
+      // Strategy 2: Cluster by keywords
+      const topicKeywords = {};
+      
+      for (const para of paragraphs) {
+        const lines = para.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        
+        // Check if first line could be a heading
+        if (lines.length > 1 && lines[0].length < 60 && lines[0].length > 2) {
+          const heading = lines[0].replace(/^[\d.)\-:]+\s*/, '').trim();
+          if (heading.length > 2 && heading.length < 50) {
+            if (!topicKeywords[heading]) topicKeywords[heading] = [];
+            topicKeywords[heading].push(para);
+            continue;
+          }
+        }
+        
+        // Keyword-based topic detection
+        const topic = detectTopicFromContent(para);
+        if (!topicKeywords[topic]) topicKeywords[topic] = [];
+        topicKeywords[topic].push(para);
+      }
+      
+      // If only 1 or no topics detected, try splitting by sentences with keyword clustering
+      if (Object.keys(topicKeywords).length <= 1) {
+        const sentences = text.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/).filter(s => s.length > 15);
+        const clusters = clusterSentences(sentences);
+        
+        for (const [topic, sents] of Object.entries(clusters)) {
+          if (sents.length > 0) {
+            detectedTopics.push({ name: topic, text: sents.join(' '), sentenceCount: sents.length });
+          }
+        }
+      } else {
+        for (const [topic, paras] of Object.entries(topicKeywords)) {
+          const combined = paras.join('\n\n');
+          const sentCount = combined.split(/(?<=[.!?])\s+/).filter(s => s.length > 15).length;
+          detectedTopics.push({ name: topic, text: combined, sentenceCount: sentCount });
+        }
+      }
+      
+      // If still only 1 topic or none, create "Gesamter Text" as single topic
+      if (detectedTopics.length <= 1) {
+        detectedTopics = [{ name: 'Gesamter Text', text: text, sentenceCount: text.split(/(?<=[.!?])\s+/).length }];
+      }
+      
+      // Show topic UI
+      renderTopics();
+    }
+    
+    function detectTopicFromContent(text) {
+      const lower = text.toLowerCase();
+      const topicMap = [
+        { keywords: ['geografi', 'land', 'kontinent', 'berg', 'fluss', 'see', 'meer', 'ozean', 'insel', 'wüste', 'ebene', 'küste', 'gebirge'], name: 'Geografie' },
+        { keywords: ['klima', 'wetter', 'temperatur', 'niederschlag', 'regen', 'wind', 'sturm', 'trocken', 'feucht'], name: 'Klima' },
+        { keywords: ['tier', 'pflanz', 'baum', 'wald', 'fauna', 'flora', 'art', 'gattung', 'säugetier', 'vogel', 'reptil'], name: 'Flora & Fauna' },
+        { keywords: ['bevölkerung', 'einwohner', 'mensch', 'volk', 'sprach', 'religion', 'kultur', 'gesellschaft', 'kirche'], name: 'Bevölkerung & Kultur' },
+        { keywords: ['geschicht', 'jahrhundert', 'krieg', 'koloni', 'unabhängig', 'könig', 'siedl', 'entdeck', 'gründ'], name: 'Geschichte' },
+        { keywords: ['politik', 'regierung', 'parlament', 'staat', 'wahl', 'bundes', 'demokrat', 'monarch', 'verfassung', 'partei'], name: 'Politik' },
+        { keywords: ['wirtschaft', 'industrie', 'export', 'import', 'handel', 'landwirtschaft', 'rohstoff', 'tourismus', 'bergbau'], name: 'Wirtschaft' },
+        { keywords: ['mathemat', 'rechn', 'zahl', 'gleich', 'formel', 'prozent', 'bruch', 'geometr'], name: 'Mathematik' },
+        { keywords: ['physik', 'energie', 'kraft', 'geschwindig', 'elektr', 'magnet', 'welle', 'atom'], name: 'Physik' },
+        { keywords: ['chemi', 'element', 'molekül', 'reaktion', 'säure', 'base', 'atom', 'periodensystem'], name: 'Chemie' },
+        { keywords: ['biolog', 'zelle', 'organ', 'körper', 'blut', 'herz', 'muskel', 'gen', 'dna', 'evolution'], name: 'Biologie' },
+      ];
+      
+      let bestTopic = 'Allgemein';
+      let bestScore = 0;
+      
+      for (const { keywords, name } of topicMap) {
+        let score = 0;
+        for (const kw of keywords) {
+          if (lower.includes(kw)) score++;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestTopic = name;
+        }
+      }
+      return bestTopic;
+    }
+    
+    function clusterSentences(sentences) {
+      const clusters = {};
+      for (const s of sentences) {
+        const topic = detectTopicFromContent(s);
+        if (!clusters[topic]) clusters[topic] = [];
+        clusters[topic].push(s);
+      }
+      return clusters;
+    }
+    
+    function renderTopics() {
+      const grid = document.getElementById('topicsGrid');
+      const section = document.getElementById('topicsSection');
+      
+      if (detectedTopics.length <= 1) {
+        section.style.display = 'none';
+        selectedTopics = new Set([0]);
+        return;
+      }
+      
+      section.style.display = 'block';
+      grid.innerHTML = '';
+      
+      detectedTopics.forEach((topic, i) => {
+        selectedTopics.add(i); // select all by default
+        const chip = document.createElement('button');
+        chip.className = 'topic-chip selected';
+        chip.dataset.index = i;
+        chip.innerHTML = `${topic.name} <span class="topic-count">(${topic.sentenceCount})</span>`;
+        chip.onclick = () => toggleTopic(i, chip);
+        grid.appendChild(chip);
+      });
+    }
+    
+    function toggleTopic(idx, chip) {
+      if (selectedTopics.has(idx)) {
+        selectedTopics.delete(idx);
+        chip.classList.remove('selected');
+      } else {
+        selectedTopics.add(idx);
+        chip.classList.add('selected');
+      }
+    }
+    
+    function toggleAllTopics() {
+      const allSelected = selectedTopics.size === detectedTopics.length;
+      const chips = document.querySelectorAll('.topic-chip');
+      
+      if (allSelected) {
+        selectedTopics.clear();
+        chips.forEach(c => c.classList.remove('selected'));
+      } else {
+        detectedTopics.forEach((_, i) => selectedTopics.add(i));
+        chips.forEach(c => c.classList.add('selected'));
+      }
+    }
+    
+    function getSelectedText() {
+      if (selectedTopics.size === 0) return extractedText; // fallback
+      return [...selectedTopics].map(i => detectedTopics[i].text).join('\n\n');
+    }
+    
+    // ========== QUIZ GENERATION ==========
+    function selectQuizType(btn) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      quizType = btn.dataset.type;
+    }
+    
+    function generateQuiz() {
+      questions = [];
+      currentQ = 0;
+      score = 0;
+      answered = false;
+      
+      // Use selected topics text
+      const activeText = getSelectedText();
+      
+      if (selectedTopics.size === 0) {
+        alert('Bitte mindestens ein Thema auswählen!');
+        return;
+      }
+      
+      // Split text into sentences
+      const sentences = activeText
+        .replace(/\n+/g, ' ')
+        .split(/(?<=[.!?])\s+/)
+        .filter(s => s.length > 15 && s.length < 300)
+        .map(s => s.trim());
+      
+      if (sentences.length < 2) {
+        alert('Nicht genug Sätze erkannt. Bitte mehr Text fotografieren!');
+        return;
+      }
+      
+      // Extract key facts (numbers, names, terms)
+      const facts = extractFacts(sentences);
+      
+      // Generate questions
+      const numQ = Math.min(Math.max(3, Math.floor(sentences.length / 2)), 8);
+      const usedSentences = new Set();
+      
+      for (let i = 0; i < numQ && i < 20; i++) {
+        let type;
+        if (quizType === 'mixed') type = Math.random() > 0.5 ? 'mc' : 'fill';
+        else type = quizType;
+        
+        // Pick unused sentence
+        let sIdx = -1;
+        for (let tries = 0; tries < 50; tries++) {
+          const idx = Math.floor(Math.random() * sentences.length);
+          if (!usedSentences.has(idx)) { sIdx = idx; break; }
+        }
+        if (sIdx === -1) break;
+        usedSentences.add(sIdx);
+        
+        const sentence = sentences[sIdx];
+        
+        if (type === 'mc') {
+          const q = createMCQuestion(sentence, facts, sentences);
+          if (q) questions.push(q);
+        } else {
+          const q = createFillQuestion(sentence);
+          if (q) questions.push(q);
+        }
+      }
+      
+      if (questions.length === 0) {
+        alert('Konnte keine Fragen generieren. Versuche mehr Text zu fotografieren!');
+        return;
+      }
+      
+      // Shuffle
+      questions.sort(() => Math.random() - 0.5);
+      
+      hide('step-extracted');
+      hide('step-results');
+      show('step-quiz');
+      showQuestion();
+    }
+    
+    function extractFacts(sentences) {
+      const facts = {
+        numbers: [],
+        terms: [],
+        names: []
+      };
+      
+      for (const s of sentences) {
+        // Numbers with context
+        const numMatches = s.match(/\d[\d.,]*\s*(%|km|m|°C|Millionen|Milliarden|Jahre|Einwohner|Arten)?/g);
+        if (numMatches) facts.numbers.push(...numMatches.map(n => n.trim()));
+        
+        // Capitalized words (potential names/terms)
+        const capWords = s.match(/[A-ZÄÖÜ][a-zäöüß]{3,}/g);
+        if (capWords) facts.terms.push(...capWords);
+      }
+      
+      // Deduplicate
+      facts.numbers = [...new Set(facts.numbers)];
+      facts.terms = [...new Set(facts.terms)];
+      return facts;
+    }
+    
+    function createMCQuestion(sentence, facts, allSentences) {
+      // Find a key element to ask about
+      // Strategy 1: Number-based question
+      const numbers = sentence.match(/(\d[\d.,]*)\s*(%|km²?|m|°C|Millionen|Milliarden|Jahre|Einwohner|Arten|kg|cm)?/);
+      if (numbers && Math.random() > 0.3) {
+        const correct = numbers[0].trim();
+        const unit = numbers[2] || '';
+        const num = parseFloat(numbers[1].replace(',', '.'));
+        
+        // Generate wrong answers
+        const wrongs = generateWrongNumbers(num, unit);
+        return makeMultipleChoice(
+          sentence.replace(correct, '______'),
+          correct,
+          wrongs
+        );
+      }
+      
+      // Strategy 2: Term-based question
+      const caps = sentence.match(/[A-ZÄÖÜ][a-zäöüß]{3,}/g);
+      if (caps && caps.length > 0) {
+        const term = caps[Math.floor(Math.random() * caps.length)];
+        const allTerms = facts.terms.filter(t => t !== term);
+        if (allTerms.length >= 2) {
+          const wrongs = shuffle(allTerms).slice(0, 3);
+          return makeMultipleChoice(
+            sentence.replace(new RegExp(term, 'g'), '______'),
+            term,
+            wrongs
+          );
+        }
+      }
+      
+      return null;
+    }
+    
+    function generateWrongNumbers(num, unit) {
+      const wrongs = [];
+      const variations = [0.5, 0.75, 1.5, 2, 0.3, 3];
+      for (const v of shuffle(variations).slice(0, 3)) {
+        let wrong = Math.round(num * v);
+        if (wrong === Math.round(num)) wrong = Math.round(num + (num * 0.2));
+        const formatted = num > 100 ? wrong.toLocaleString('de-DE') : wrong;
+        wrongs.push(formatted + (unit ? ' ' + unit : ''));
+      }
+      return wrongs;
+    }
+    
+    function makeMultipleChoice(questionText, correct, wrongs) {
+      const options = shuffle([correct, ...wrongs.slice(0, 3)]);
+      return {
+        type: 'mc',
+        question: questionText,
+        options: options,
+        correct: correct,
+        correctIndex: options.indexOf(correct)
+      };
+    }
+    
+    function createFillQuestion(sentence) {
+      // Find a word to blank out
+      const words = sentence.split(/\s+/).filter(w => w.length > 3);
+      if (words.length < 3) return null;
+      
+      // Prefer numbers or capitalized words
+      let target = null;
+      const caps = words.filter(w => /^[A-ZÄÖÜ]/.test(w) && w.length > 3);
+      const nums = words.filter(w => /\d/.test(w));
+      
+      if (nums.length > 0 && Math.random() > 0.4) {
+        target = nums[Math.floor(Math.random() * nums.length)];
+      } else if (caps.length > 0) {
+        target = caps[Math.floor(Math.random() * caps.length)];
+      } else {
+        // Pick random important-looking word
+        const candidates = words.filter(w => w.length > 4);
+        if (candidates.length === 0) return null;
+        target = candidates[Math.floor(Math.random() * candidates.length)];
+      }
+      
+      // Clean target from punctuation for answer
+      const cleanTarget = target.replace(/[.,;:!?()]/g, '');
+      
+      return {
+        type: 'fill',
+        question: sentence.replace(target, '______'),
+        correct: cleanTarget
+      };
+    }
+    
+    // ========== QUIZ UI ==========
+    function showQuestion() {
+      if (currentQ >= questions.length) {
+        showResults();
+        return;
+      }
+      
+      answered = false;
+      const q = questions[currentQ];
+      document.getElementById('quizCounter').textContent = 
+        `Frage ${currentQ + 1}/${questions.length}`;
+      document.getElementById('quizScore').textContent = score + ' Punkte';
+      document.getElementById('nextBtn').style.display = 'none';
+      
+      const container = document.getElementById('quizContainer');
+      
+      if (q.type === 'mc') {
+        container.innerHTML = `
+          <div class="question-card">
+            <div class="question-type">Multiple Choice</div>
+            <div class="question-text">${escapeHtml(q.question)}</div>
+            <div class="options">
+              ${q.options.map((opt, i) => `
+                <button class="option-btn" onclick="checkMC(${i})" id="opt${i}">
+                  ${String.fromCharCode(65 + i)}) ${escapeHtml(opt)}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="question-card">
+            <div class="question-type">✏️ Lückentext</div>
+            <div class="question-text">${escapeHtml(q.question)}</div>
+            <input class="answer-input" id="fillInput" type="text" 
+                   placeholder="Antwort eingeben..." autocomplete="off"
+                   onkeypress="if(event.key==='Enter')checkFill()">
+            <button class="btn btn-check" onclick="checkFill()">Prüfen</button>
+          </div>
+        `;
+        setTimeout(() => document.getElementById('fillInput')?.focus(), 100);
+      }
+    }
+    
+    function checkMC(idx) {
+      if (answered) return;
+      answered = true;
+      
+      const q = questions[currentQ];
+      const btns = document.querySelectorAll('.option-btn');
+      btns.forEach(b => b.disabled = true);
+      
+      if (idx === q.correctIndex) {
+        score++;
+        btns[idx].classList.add('correct');
+      } else {
+        btns[idx].classList.add('wrong');
+        btns[q.correctIndex].classList.add('highlight');
+      }
+      
+      document.getElementById('quizScore').textContent = score + ' Punkte';
+      document.getElementById('nextBtn').style.display = 'block';
+    }
+    
+    function checkFill() {
+      if (answered) return;
+      answered = true;
+      
+      const q = questions[currentQ];
+      const input = document.getElementById('fillInput');
+      const userAnswer = input.value.trim();
+      
+      // Fuzzy match - case insensitive, allow small typos
+      const correct = q.correct.toLowerCase();
+      const user = userAnswer.toLowerCase();
+      const isCorrect = correct === user || 
+                        correct.includes(user) && user.length > correct.length * 0.6 ||
+                        levenshtein(correct, user) <= Math.max(1, Math.floor(correct.length * 0.25));
+      
+      if (isCorrect) {
+        score++;
+        input.style.borderColor = 'var(--green)';
+        input.style.color = 'var(--green)';
+      } else {
+        input.style.borderColor = 'var(--red)';
+        input.style.color = 'var(--red)';
+      }
+      
+      // Show correct answer
+      const card = document.querySelector('.question-card');
+      card.insertAdjacentHTML('beforeend', `
+        <div style="margin-top:12px; padding:12px; background:rgba(34,197,94,0.1); 
+             border-radius:10px; color:var(--green); font-size:14px;">
+          ✅ Richtige Antwort: <strong>${escapeHtml(q.correct)}</strong>
+        </div>
+      `);
+      
+      input.disabled = true;
+      document.getElementById('quizScore').textContent = score + ' Punkte';
+      document.getElementById('nextBtn').style.display = 'block';
+    }
+    
+    function nextQuestion() {
+      currentQ++;
+      showQuestion();
+    }
+    
+    function showResults() {
+      hide('step-quiz');
+      show('step-results');
+      
+      const pct = Math.round((score / questions.length) * 100);
+      document.getElementById('resultsScore').textContent = `${score}/${questions.length}`;
+      
+      let emoji, color;
+      if (pct >= 80) { emoji = '🎉'; color = 'var(--green)'; }
+      else if (pct >= 50) { emoji = '👍'; color = 'var(--yellow)'; }
+      else { emoji = '💪'; color = 'var(--red)'; }
+      
+      document.getElementById('resultsEmoji').textContent = emoji;
+      const fill = document.getElementById('resultsFill');
+      fill.style.background = color;
+      setTimeout(() => fill.style.width = pct + '%', 100);
+    }
+    
+    // ========== UTILITIES ==========
+    function show(id) { document.getElementById(id).style.display = 'block'; }
+    function hide(id) { document.getElementById(id).style.display = 'none'; }
+    
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+    
+    function escapeHtml(t) {
+      return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    
+    function levenshtein(a, b) {
+      const m = a.length, n = b.length;
+      const d = Array.from({length: m+1}, (_,i) => [i]);
+      for (let j = 1; j <= n; j++) d[0][j] = j;
+      for (let i = 1; i <= m; i++)
+        for (let j = 1; j <= n; j++)
+          d[i][j] = Math.min(
+            d[i-1][j] + 1,
+            d[i][j-1] + 1,
+            d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)
+          );
+      return d[m][n];
+    }
+    
+    function resetAll() {
+      hide('step-loading');
+      hide('step-extracted');
+      hide('step-quiz');
+      hide('step-results');
+      show('step-upload');
+      document.getElementById('preview').style.display = 'none';
+      document.getElementById('fileInput').value = '';
+      extractedText = '';
+      questions = [];
+    }
+  </script>
+</body>
+</html>
